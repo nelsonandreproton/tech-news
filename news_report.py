@@ -17,6 +17,8 @@ GITHUB_REPOS = [
     ("anthropics", "anthropic-sdk-node"),
 ]
 
+NEOCAT_URL = "https://neocatechumenaleiter.org/pt-br/noticias/"
+
 TOPICS = {
     "anthropic": {
         "title": "🤖 Claude Code & Anthropic",
@@ -29,6 +31,10 @@ TOPICS = {
     "chiefs": {
         "title": "🏈 Kansas City Chiefs",
         "emoji": "🏈",
+    },
+    "neocat": {
+        "title": "✝️ Caminho Neocatecumenal",
+        "emoji": "✝️",
     },
 }
 
@@ -216,6 +222,50 @@ def fmt_hn(item: dict, i: int) -> str:
     return f"  {i}. {item['title']} · {item['date']}\n     ⬆️ {item['points']} pts · 💬 {item['comments']} · 🔗 {item['hn_url']}"
 
 
+# ── Neocat scraper ────────────────────────────────────────────────────────────
+
+def get_neocat_news(max_results: int = 5) -> list[dict]:
+    """Scrape neocatechumenaleiter.org/pt-br/noticias/ with Playwright."""
+    script = f"""
+const {{ chromium }} = require('playwright');
+(async () => {{
+  const browser = await chromium.launch({{ args: ['--no-sandbox'] }});
+  const page = await browser.newPage();
+  await page.goto('{NEOCAT_URL}', {{ waitUntil: 'domcontentloaded', timeout: 20000 }});
+  await page.waitForTimeout(3000);
+  const items = await page.evaluate(() => {{
+    const results = [];
+    const text = document.body.innerText;
+    const lines = text.split('\\n').map(l => l.trim()).filter(Boolean);
+    // Pattern: TITLE (all caps or mixed), then date line "month DD, YYYY Author"
+    for (let i = 0; i < lines.length - 1; i++) {{
+      const line = lines[i];
+      const next = lines[i + 1] || '';
+      // Date line matches e.g. "março 12, 2026 CncMadrid"
+      const dateMatch = next.match(/^([a-záéíóúâêôãõçàü]+ \\d{{1,2}}, \\d{{4}})/i);
+      if (dateMatch && line.length > 10 && line.length < 300 && !line.includes('\\n')) {{
+        results.push({{ title: line, date: dateMatch[1], link: '{NEOCAT_URL}' }});
+      }}
+    }}
+    return results.slice(0, {max_results});
+  }});
+  console.log(JSON.stringify(items));
+  await browser.close();
+}})().catch(e => {{ console.log(JSON.stringify([])); }});
+"""
+    try:
+        import subprocess
+        env = os.environ.copy()
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=35, env=env)
+        for line in reversed(result.stdout.strip().splitlines()):
+            if line.startswith("["):
+                items = json.loads(line)
+                return items if items else [{"empty": True}]
+        return [{"empty": True}]
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
 # ── Topic renderers ────────────────────────────────────────────────────────────
 
 def render_anthropic(date_str: str, day_name: str) -> str:
@@ -323,11 +373,27 @@ def render_chiefs(date_str: str, day_name: str) -> str:
     return "\n".join(lines)
 
 
+def render_neocat(date_str: str, day_name: str) -> str:
+    lines = [f"✝️ Caminho Neocatecumenal — {day_name}, {date_str}\n"]
+
+    lines.append("📰 Últimas Notícias")
+    news = get_neocat_news(max_results=5)
+    if news and "error" not in news[0] and "empty" not in news[0]:
+        for i, item in enumerate(news, 1):
+            date = f" · {item['date']}" if item.get("date") else ""
+            link = item.get("link") or NEOCAT_URL
+            lines.append(f"  {i}. {item['title']}{date}\n     🔗 {link}")
+    else:
+        lines.append(no_news())
+
+    return "\n".join(lines)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Daily news digest per topic")
-    parser.add_argument("--topic", choices=list(TOPICS.keys()), required=True,
+    parser.add_argument("--topic", choices=["anthropic", "outsystems", "chiefs", "neocat"], required=True,
                         help="Topic to render: anthropic, outsystems, chiefs")
     args = parser.parse_args()
 
@@ -341,6 +407,8 @@ def main():
         print(render_outsystems(date_str, day_name))
     elif args.topic == "chiefs":
         print(render_chiefs(date_str, day_name))
+    elif args.topic == "neocat":
+        print(render_neocat(date_str, day_name))
 
 
 if __name__ == "__main__":
