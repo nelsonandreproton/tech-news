@@ -250,7 +250,16 @@ def main():
     else:
         lines.append(no_news())
 
-    # 3. OutSystems — Google News + product updates page
+    # 3. Google News — Kansas City Chiefs
+    lines.append("\n🏈 Kansas City Chiefs")
+    news_chiefs = get_google_news("Kansas City Chiefs", max_results=4)
+    if news_chiefs and "error" not in news_chiefs[0]:
+        for i, item in enumerate(news_chiefs, 1):
+            lines.append(fmt_news_item(item, i))
+    else:
+        lines.append(no_news())
+
+    # 4. OutSystems — Google News + product updates page
     lines.append("\n🏗️ OutSystems")
     news_outsystems = get_google_news("OutSystems", max_results=3)
     os_updates = get_outsystems_updates(max_results=3)
